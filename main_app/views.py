@@ -1,23 +1,60 @@
 import json
 
-from django.core.serializers import serialize
+from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, HttpRequest
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from rest_framework.permissions import IsAuthenticated
 
+from .forms import BookForm
 from .models import Book
 from .serializers import BookSerializer, HWDataSerializer
 from rest_framework import viewsets
 from rest_framework.response import Response
-from .models import Pizza
-from .serializers import PizzaSerializer
+
+@login_required
+def my_books(request):
+    books = request.user.books.all()
+    return render(request, 'my_books.html', {'books': books})
+
+
+@login_required
+def add_book(request):
+    if request.method == "POST":
+        form = BookForm(request.POST)
+        if form.is_valid():
+            book = form.save(commit=False)
+            book.created_by = request.user
+            book.save()
+            return HttpResponse("Book added successfully!")
+    else:
+        form = BookForm()
+        return render(request, 'add_book.html', {'form': form})
+
+
+@login_required
+def delete_book(request, book_id):
+    book = get_object_or_404(Book, id=book_id, created_by=request.user)
+    if request.method == "POST":
+        book.delete()
+        return redirect("my_books")
+
+# /books/1/confirm_delete -> /books/1/delete
+@login_required
+def confirm_delete(request, book_id):
+    book = get_object_or_404(Book, id=book_id, created_by=request.user)
+    return render(request, 'confirm_delete.html', {'book': book})
+
+
 class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
+    permission_classes = [IsAuthenticated]
 
 
 class BookCustomViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
 
     # HTTP GET localhost:8000/custom_books/
     def list(self, request):
@@ -52,37 +89,6 @@ class BookCustomViewSet(viewsets.ViewSet):
             return Response({"error": "Book not found!"}, status=status.HTTP_404_NOT_FOUND)
 
 
-class PizzaCustomViewset(viewsets.ViewSet):
-    def list(self, request):
-        pizza = Pizza.objects.all()
-        serializer = PizzaSerializer(pizza, many=True)
-        return Response(serializer.data)
-    def retrieve(self, request, pk):
-        try:
-            pizza = Pizza.objects.get(pk=pk)
-            serializer = PizzaSerializer(pizza)
-            return Response(serializer.data)
-        except Pizza.DoesNotExist:
-            return Response({"error": "Pizza Not Found"}, status=status.HTTP_404_NOT_FOUND)
-
-    def create(self, request):
-        serializer = PizzaSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response({"error": "Not Found"}, status=status.HTTP_404_NOT_FOUND)
-
-    def destroy(self, request, pk):
-        try:
-            pizza = Pizza.objects.get(pk=pk)
-            pizza.delete()
-            return Response({"message": "Pizza deleted successfully!"}, status=status.HTTP_200_OK)
-        except Pizza.DoesNotExist:
-            return Response({"error": "Pizza not found!"}, status=status.HTTP_404_NOT_FOUND)
-
-
-
 class ActionViewSet(viewsets.ViewSet):
     def create(self, request):
         serializer = HWDataSerializer(data=request.data)
@@ -114,7 +120,7 @@ books = ["1984", "To Kill a Mockingbird", "The Great Gatsby", "Moby-Dick", "Prid
 def home(request):
     # return HttpResponse(content)
     # return redirect("https://google.com/")
-    return render(request, 'main.html', {
+    return render(request, 'home.html', {
         "content": content
     })
 
